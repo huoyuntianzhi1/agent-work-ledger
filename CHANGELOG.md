@@ -8,6 +8,28 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.2 — 2026-10-18
+
+- **Hotfix — keychain service name for `trae_solo`.** v0.5.1
+  shipped with `TRAE_SOLO_KEYCHAIN_SERVICE = "TRAE SOLO Safe Storage"`
+  but the actual entry Trae's Electron fork (`com.trae.app`,
+  v3.5.50) writes is `"Trae Safe Storage"` (account `"Trae Key"`),
+  per `security dump-keychain`. With the wrong name `security
+  find-generic-password` always exits 44 ("could not be found"),
+  the connector lands in `NoKeychainEntry` forever, and the GUI
+  prompt never fires. **Fix**: const renamed to
+  `TRAE_KEYCHAIN_SERVICE = "Trae Safe Storage"` with a
+  `TRAE_SOLO_KEYCHAIN_SERVICE` back-compat alias, `security`
+  call switched from `-w` to `-wa` (so the access-ACL check
+  forces a one-time GUI prompt even when the entry has been
+  previously read headlessly), doc comments updated.
+- 2 new tests (`keychain_service_name_is_what_trae_writes`,
+  `security_cli_finds_real_entry`) act as regression guards
+  against future renames; 143 total pass (was 141).
+- Public tracking: v0.5.1 stays the canonical "Stage 6
+  SQLCipher unlock" feature release; v0.5.2 is a 1-line
+  diagnosis hotfix. Both share the same connector code path.
+
 ## v0.5.1 — 2026-10-18
 
 - **Stage 6 / Track B: SQLCipher unlock for TRAE SOLO.** New

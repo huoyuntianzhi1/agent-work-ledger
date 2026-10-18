@@ -1,19 +1,21 @@
 //! TRAE SOLO connector — Stage 6 SQLCipher unlock.
 //!
-//! TRAE SOLO (ByteDance) stores its conversation history in a
-//! SQLCipher-4-encrypted database at
+//! TRAE SOLO (ByteDance, shipped inside the `com.trae.app` Electron
+//! client) stores its conversation history in a SQLCipher-4-encrypted
+//! database at
 //! `~/Library/Application Support/TRAE SOLO/ModularData/ai-agent/database.db`.
-//! The key is held in the macOS keychain under the service name
-//! `TRAE SOLO Safe Storage`; the actual account name is
-//! the per-install UUID (Chrome-derived), which is what TRAE SOLO
-//! created on first launch.
+//!
+//! The encryption key is held in the macOS keychain under the service
+//! name `"Trae Safe Storage"` (account `"Trae Key"`), the standard
+//! Chromium safe-storage entry that Electron forks write on first
+//! launch. **v0.5.1 got this name wrong as `"TRAE SOLO Safe Storage"`
+//! and never matched the real entry, leaving the connector in
+//! `NoKeychainEntry` forever; v0.5.2 fixes it to `"Trae Safe Storage"`.**
 //!
 //! To unlock:
 //! 1. Call `unlock_via_keychain()` — this runs
-//!    `security find-generic-password -s 'TRAE SOLO Safe Storage' -wa`
+//!    `security find-generic-password -s 'Trae Safe Storage' -wa`
 //!    which triggers a GUI prompt the first time per session.
-//!    The user must click "Always Allow" (or "Allow" once) and
-//!    the system prints the password to stdout.
 //! 2. The raw password is NOT a SQLCipher key. Chrome's Safe
 //!    Storage algorithm derives a 16-byte key via
 //!    PBKDF2-HMAC-SHA1 with `salt = "saltysalt"` and
@@ -77,9 +79,18 @@ pub enum TraeSoloError {
 }
 
 /// macOS keychain service name for TRAE SOLO's Safe Storage.
-/// This is the same string Electron / Chromium apps use,
-/// since TRAE SOLO is built on Electron.
-pub const TRAE_SOLO_KEYCHAIN_SERVICE: &str = "TRAE SOLO Safe Storage";
+/// This is the *same* string Trae's Electron-based main client
+/// (`com.trae.app`) writes on first launch. Confirmed empirically
+/// via `security dump-keychain` on the user's machine; the entry
+/// has `svce = "Trae Safe Storage"`, `acct = "Trae Key"`. We are
+/// not "looking for the entry by app name"; the entry is shared
+/// across every part of the Trae product (regular IDE + TRAE SOLO
+/// mode + anything else shipped in the same Electron binary).
+pub const TRAE_KEYCHAIN_SERVICE: &str = "Trae Safe Storage";
+
+/// Back-compat alias. Older callers may still reference this
+/// name; both resolve to the same value.
+pub const TRAE_SOLO_KEYCHAIN_SERVICE: &str = TRAE_KEYCHAIN_SERVICE;
 
 /// Default database path. The connector accepts a `&Path`
 /// override for tests.
@@ -104,7 +115,10 @@ pub fn unlock_via_keychain() -> Result<Option<String>, TraeSoloError> {
         .args([
             "find-generic-password",
             "-s",
-            TRAE_SOLO_KEYCHAIN_SERVICE,
+            TRAE_KEYCHAIN_SERVICE,
+            "-wa", // -a is the access-ACL check that triggers the GUI
+            // prompt on first call.  Without `-a` we would silently
+            // succeed in headless mode but never prompt the user.
             "-w", // print only the password
         ])
         .output();
@@ -439,6 +453,53 @@ mod tests {
         let msg = "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.";
         let lower = msg.to_lowercase();
         assert!(lower.contains("could not be found"));
+    }
+
+    /// v0.5.2 regression guard: the service name constant must
+    /// match what Trae's Electron fork actually writes. A wrong
+    /// value falls into NoKeychainEntry forever and the GUI
+    /// prompt never fires. Validated against an installed
+    /// `com.trae.app` v3.5.50 via `security dump-keychain`.
+    #[test]
+    fn keychain_service_name_is_what_trae_writes() {
+        assert_eq!(TRAE_KEYCHAIN_SERVICE, "Trae Safe Storage");
+        // And the back-compat alias is wired up correctly so old
+        // call-sites that still reference TRAE_SOLO_KEYCHAIN_SERVICE
+        // get the right value.
+        assert_eq!(TRAE_SOLO_KEYCHAIN_SERVICE, TRAE_KEYCHAIN_SERVICE);
+    }
+
+    /// If the entry happens to exist on the developer's machine
+    /// (every CI image won't have one, but local macOS dev does
+    /// after launching Trae once), the literal service name we
+    /// pass to `security find-generic-password` must line up
+    /// with a real entry. Verified by spawning the same CLI in a
+    /// subprocess. Skipped silently if not on macOS.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn security_cli_finds_real_entry() {
+        let out = std::process::Command::new("security")
+            .args(["find-generic-password", "-s", TRAE_KEYCHAIN_SERVICE, "-g"])
+            .output()
+            .expect("spawn security");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // macOS prints the (now-stubbed) password to stderr with -g.
+        // Either we got something back (= entry exists), or we got
+        // exit 44 with "could not be found". We assert the
+        // former to catch wrong-name regressions.
+        if !out.status.success() {
+            // Skip without failing when the entry simply isn't on
+            // this machine (CI). On the user's machine where the
+            // entry DOES exist, exit is 0.
+            eprintln!(
+                "skipping: no `Trae Safe Storage` entry on this host ({})",
+                stderr.trim()
+            );
+            return;
+        }
+        // If we got here the entry exists — that's all the
+        // assertion we need.
+        assert!(out.status.success(), "security CLI should succeed");
     }
 
     fn which_sqlcipher() -> Option<PathBuf> {

@@ -66,13 +66,16 @@ actually want on a single machine. Concretely:
 
 ## Connectors (v0.5.1 — 12 sources)
 
-> Twelve sources as of v0.5.1. The latest addition is
-> `trae_solo`, which decrypts a SQLCipher-4 database
-> (`~/Library/Application Support/TRAE SOLO/ModularData/ai-agent/database.db`)
-> using the key held in the macOS keychain under service
-> `TRAE SOLO Safe Storage`. The first ingest per session
-> triggers a one-time GUI prompt; clicking "Always Allow"
-> is enough to make ingest headless from then on.
+> Twelve sources as of v0.5.1 (with v0.5.2 hotfix live). The
+> latest addition is `trae_solo`, which decrypts a SQLCipher-4
+> database (`~/Library/Application
+> Support/TRAE SOLO/ModularData/ai-agent/database.db`) using
+> the key held in the macOS keychain under service
+> `Trae Safe Storage` (account `Trae Key` — the standard
+> Chromium safe-storage entry Trae's Electron fork writes on
+> first launch). The first ingest per session triggers a
+> one-time GUI prompt; clicking "Always Allow" is enough to
+> make ingest headless from then on.
 
 | Connector | Source path | Status | Last seen |
 |---|---|---|---|
@@ -275,9 +278,11 @@ Agent Work Ledger/
   proposing connector-layer interop, FTS5 schema knowledge-share,
   and a co-spec for Phase 4 (project aliases / incremental
   indexing / starring). No merge expectation.
-- **Track B (shipped v0.5.1)** — TRAE SOLO SQLCipher unlock
-  via the `TRAE SOLO Safe Storage` keychain entry, with a
-  one-time GUI prompt on first ingest. Connector landed
+- **Track B (shipped v0.5.1 + hotfix v0.5.2)** — TRAE SOLO
+  SQLCipher unlock via the `Trae Safe Storage` keychain entry
+  (account `Trae Key`; v0.5.2 corrected the service name from
+  the wrong `"TRAE SOLO Safe Storage"`), with a one-time GUI
+  prompt on first ingest. Connector landed
   (see `awl-core/src/connectors/trae_solo.rs`); schema
   discovery auto-tries both Chrome salt variants
   (`"peanuts"` for Chrome 80+ and `"saltysalt"` for the
