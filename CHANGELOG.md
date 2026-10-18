@@ -8,6 +8,65 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.1 — 2026-10-18
+
+- **Stage 6 / Track B: SQLCipher unlock for TRAE SOLO.** New
+  connector `trae_solo` reads the encrypted database at
+  `~/Library/Application Support/TRAE SOLO/ModularData/ai-agent/database.db`
+  using the key held in the macOS keychain under service
+  `TRAE SOLO Safe Storage`. The first scan per session
+  triggers a one-time GUI prompt; clicking "Always Allow"
+  is enough to make all subsequent scans headless.
+- **New IPC commands**: `scan_trae_solo` (mirrors the other
+  per-source scan handlers) and `trae_solo_status` (read-only
+  state probe used by the Home page card). Both registered
+  in `awl_ipc::register`.
+- **`auto_rescan_all` now sweeps 11 sources** (was 10):
+  `codex`, `claude_code`, `cursor`, `opencode`, `workbuddy`,
+  `doubao`, `doubao_work`, `minimax_code`, `trae`,
+  `trae_solo`, `markdown_summary`. The new entry is
+  gated by the keychain — if the user denies the prompt
+  the connector returns a `skipped` scan and the rest of
+  the auto-rescan continues unaffected.
+- **Home page status card** (v0.5.1, App.tsx): a small
+  badge that polls `trae_solo_status` every 5 seconds and
+  renders one of five states:
+  - **未检测到 keychain 条目** (amber) — TRAE SOLO has not
+    been launched yet.
+  - **keychain 访问被拒绝** (amber) — the user clicked
+    "Deny" on the GUI prompt. The "重新触发" button retries.
+  - **已解锁 · N 条对话** (emerald) — ingest succeeded,
+    N messages counted in the decrypted DB.
+  - **schema 不匹配** (red) — both `peanuts` and
+    `saltysalt` PBKDF2 salts failed (TRAE SOLO is on a
+    Chromium version we don't recognize).
+  - **错误: …** (red) — sqlcipher CLI missing, file
+    permissions, etc.
+- **Pure-CLI decryption pipeline**: the connector shells
+  out to the homebrew `sqlcipher` CLI for the actual
+  decryption; the main `awl-db` stays plain `rusqlite`
+  (no `bundled-sqlcipher` feature was enabled, so the
+  workspace never had to deal with feature unification).
+  The plaintext copy lives in `$TMPDIR` and is removed
+  after the ingest.
+- **Keychain key derivation**: Chrome's Safe Storage
+  algorithm, PBKDF2-HMAC-SHA1 with 1 iteration and a
+  16-byte output. The connector tries `salt = "peanuts"`
+  first (Chrome 80+) and falls back to
+  `salt = "saltysalt"` (legacy Chromium v10).
+- **`AppError::TraeSolo(String)`** new variant in
+  `awl-core/src/error.rs`; `From<TraeSoloError> for
+  AppError` lives in `awl-core/src/trae_solo.rs` so the
+  connector can `?`-bubble without per-crate wrappers.
+- **Tests**: 3 new unit tests in `awl-core` exercise
+  the round-trip (sqlcipher encrypt → our decrypt → row
+  read) and the no-keychain-entry classification. Total
+  workspace test count: **141** (was 138 in v0.5.0).
+- No binary behavior change for users who have not
+  launched TRAE SOLO — the new connector reports
+  `NoKeychainEntry` and stays out of the way. The Home
+  page card silently says "未检测到 keychain 条目".
+
 ## v0.5.0 — 2026-10-18
 
 - **Workspace split (Track A of the v0.5.0 roadmap)**. The

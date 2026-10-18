@@ -603,6 +603,15 @@ export default function App() {
           )}
         </Card>
 
+        {/* Stage 6 (Track B / v0.5.1): TRAE SOLO SQLCipher
+            status card. Polls the Rust IPC `trae_solo_status`
+            every 5s; on first successful probe the user is
+            one keychain prompt away from getting their TRAE
+            SOLO history into the main timeline. */}
+        <Card title="TRAE SOLO (SQLCipher)">
+          <TraeSoloStatusCard />
+        </Card>
+
         <Card title="数据源扫描">
           {/* Phase D.3: scan-window selector. Default live mode
               (rolling now-24h), user can flip to 指定起始 and pick a
@@ -1007,5 +1016,116 @@ function DeltaPill({ delta }: { delta: BriefDelta }) {
       Q1 {sign}
       {q1_delta} {arrow} · {verdict === "more urgent" ? "较昨天更急" : verdict === "less urgent" ? "较昨天缓" : "持平"}
     </span>
+  );
+}
+
+// Stage 6 (Track B / v0.5.1): a small status badge for the
+// TRAE SOLO SQLCipher connector. Polls the Rust IPC
+// `trae_solo_status` every 5 s and renders one of:
+//   - "no_keychain_entry" — TRAE SOLO has not been launched
+//     yet, or the Safe Storage entry has been wiped.
+//   - "keychain_access_denied" — the user clicked "Deny" on
+//     the macOS keychain GUI prompt. They can re-trigger by
+//     clicking the Rescan button below.
+//   - "unlocked" — keychain granted, DB decrypted, N events
+//     counted. The Events count is read from the actual
+//     messages table inside the decrypted DB.
+//   - "schema_mismatch" — both 'peanuts' and 'saltysalt' PBKDF2
+//     salts failed; TRAE SOLO is on a Chromium version we
+//     don't recognize yet.
+//   - "error: <detail>" — sqlcipher CLI missing, file
+//     permission denied, etc.
+type TraeSoloState =
+  | { state: "no_keychain_entry" }
+  | { state: "keychain_access_denied" }
+  | { state: "unlocked"; events_found: number }
+  | { state: "schema_mismatch"; detail: string }
+  | { state: "error"; detail: string };
+
+function TraeSoloStatusCard() {
+  const [status, setStatus] = useState<TraeSoloState | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const poll = useCallback(async () => {
+    try {
+      const raw = await invoke<TraeSoloState>("trae_solo_status");
+      setStatus(raw);
+    } catch (e) {
+      setStatus({ state: "error", detail: String(e) });
+    }
+  }, []);
+
+  useEffect(() => {
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
+  }, [poll]);
+
+  const triggerScan = useCallback(async () => {
+    setScanning(true);
+    try {
+      await invoke("scan_trae_solo", { sinceMs: null });
+      await poll();
+    } finally {
+      setScanning(false);
+    }
+  }, [poll]);
+
+  const tone =
+    !status
+      ? "border-neutral-300 bg-neutral-50 text-neutral-600"
+      : status.state === "unlocked"
+      ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+      : status.state === "no_keychain_entry" ||
+        status.state === "keychain_access_denied"
+      ? "border-amber-300 bg-amber-50 text-amber-800"
+      : "border-red-300 bg-red-50 text-red-700";
+
+  const label = !status
+    ? "检查中…"
+    : status.state === "unlocked"
+    ? `已解锁 · ${status.events_found} 条对话`
+    : status.state === "no_keychain_entry"
+    ? "未检测到 keychain 条目"
+    : status.state === "keychain_access_denied"
+    ? "keychain 访问被拒绝"
+    : status.state === "schema_mismatch"
+    ? "schema 不匹配"
+    : `错误: ${status.detail}`;
+
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <span
+        data-testid="trae-solo-status"
+        data-state={status?.state ?? "loading"}
+        className={`inline-flex w-fit rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}
+      >
+        {label}
+      </span>
+      {status?.state === "schema_mismatch" && (
+        <p className="text-xs text-neutral-500">{status.detail}</p>
+      )}
+      {status?.state === "error" && (
+        <p className="text-xs text-neutral-500">{status.detail}</p>
+      )}
+      {status?.state === "no_keychain_entry" && (
+        <p className="text-xs text-neutral-500">
+          启动一次 TRAE SOLO 让它初始化 Safe Storage,然后回到这里重新检测。
+        </p>
+      )}
+      {status?.state === "keychain_access_denied" && (
+        <p className="text-xs text-neutral-500">
+          macOS 的 keychain 弹窗被你拒绝了。点下面的"重新触发"再试一次。
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={triggerScan}
+        disabled={scanning}
+        className="w-fit rounded-md border border-neutral-300 px-2 py-0.5 text-[11px] text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+      >
+        {scanning ? "处理中…" : "重新触发"}
+      </button>
+    </div>
   );
 }

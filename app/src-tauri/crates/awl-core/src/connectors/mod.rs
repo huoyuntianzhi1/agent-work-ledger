@@ -12,6 +12,7 @@ pub mod markdown_summary;
 pub mod minimax;
 pub mod opencode;
 pub mod trae;
+pub mod trae_solo;
 pub mod workbuddy;
 
 #[cfg(test)]
@@ -45,6 +46,7 @@ pub mod kinds {
     pub const DOUBAO_WORK: &str = "doubao_work";
     pub const MINIMAX_CODE: &str = "minimax_code";
     pub const TRAE: &str = "trae";
+    pub const TRAE_SOLO: &str = "trae_solo";
     pub const MARKDOWN_SUMMARY: &str = "markdown_summary";
 }
 
@@ -117,6 +119,7 @@ pub fn validate_kind(v: &Json) -> AppResult<()> {
         kinds::DOUBAO_WORK,
         kinds::MINIMAX_CODE,
         kinds::TRAE,
+        kinds::TRAE_SOLO,
         kinds::MARKDOWN_SUMMARY,
     ]
     .contains(&s)

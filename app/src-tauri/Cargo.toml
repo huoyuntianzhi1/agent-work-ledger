@@ -34,7 +34,7 @@ publish = false
 # Agent Work Ledger is a private workspace; do not publish any of these
 # crates to crates.io even by accident.
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.77"
 license = "MIT OR Apache-2.0"

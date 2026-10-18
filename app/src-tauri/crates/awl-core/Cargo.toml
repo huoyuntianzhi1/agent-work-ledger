@@ -30,6 +30,17 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # window_state helpers (`WebviewWindow::outer_position/outer_size`).
 tauri = { version = "2", features = [] }
 
+# Stage 6 SQLCipher unlock (TRAE SOLO). The connector shells
+# out to the `sqlcipher` CLI for actual decryption; on the
+# Rust side we only need PBKDF2-HMAC-SHA1 (Chrome's Safe
+# Storage key derivation) and the macOS `security` CLI for
+# keychain access. No link-time libsqlcipher dependency, so
+# the main `awl-db` SQLite path stays plain `rusqlite`
+# (`bundled`).
+hmac = "0.12"
+pbkdf2 = "0.12"
+sha1 = "0.10"
+
 [dev-dependencies]
 # `migrate_for_tests` only lives in awl-db; connector test mods build an
 # in-memory ledger via that helper.

@@ -17,3 +17,4 @@ pub mod redactor;
 pub mod reports;
 pub mod search;
 pub mod summary;
+pub mod trae_solo;

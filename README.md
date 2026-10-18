@@ -64,12 +64,15 @@ actually want on a single machine. Concretely:
   payload hits SQLite. Cloud providers get the redactor bolted on at
   the IPC layer; no LLM provider call ever sees a raw secret.
 
-## Connectors (v0.5.0 — 11 sources)
+## Connectors (v0.5.1 — 12 sources)
 
-> Unchanged since v0.4.5 except for the workspace split (the
-> ten parsing modules now live in `awl-core/src/connectors/`).
-> Track B (v0.5.1) will add the twelfth: SQLCipher-decrypted
-> `trae_solo`.
+> Twelve sources as of v0.5.1. The latest addition is
+> `trae_solo`, which decrypts a SQLCipher-4 database
+> (`~/Library/Application Support/TRAE SOLO/ModularData/ai-agent/database.db`)
+> using the key held in the macOS keychain under service
+> `TRAE SOLO Safe Storage`. The first ingest per session
+> triggers a one-time GUI prompt; clicking "Always Allow"
+> is enough to make ingest headless from then on.
 
 | Connector | Source path | Status | Last seen |
 |---|---|---|---|
@@ -84,6 +87,7 @@ actually want on a single machine. Concretely:
 | `cursor` | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` | ✅ events (plaintext stash) | v0.4.5 |
 | `trae` | `~/Library/Application Support/Trae/IndexedDB/` | ⚠ metadata only | v0.1.0 |
 | `codebuddy_cn` | `~/Library/Application Support/CodeBuddy CN/codebuddy-sessions.vscdb` | ⚠ metadata only | v0.1.0 |
+| `trae_solo` | `~/Library/Application Support/TRAE SOLO/ModularData/ai-agent/database.db` (SQLCipher-4) | ✅ events (keychain-gated) | v0.5.1 |
 
 **Cursor plaintext stash (v0.4.5)** is the standout capability: Cursor
 stores its chat history unencrypted in a SQLite file at
@@ -262,11 +266,6 @@ Agent Work Ledger/
 
 ## Roadmap (next)
 
-- **Track B / Stage 6 SQLCipher** (in flight, ships as v0.5.1) —
-  decrypt TRAE SOLO's `ai-agent/database.db` with the user's keychain
-  entry under service `TRAE SOLO Safe Storage`. One user prompt
-  (`security find-generic-password -s 'TRAE SOLO Safe Storage' -wa`)
-  before the first ingest; subsequent runs are headless.
 - **OSS visibility** (shipped v0.4.10.1) — live at
   <https://github.com/huoyuntianzhi1/agent-work-ledger>. Stars,
   watchers, and one external PR will gate the next milestone.
@@ -276,3 +275,10 @@ Agent Work Ledger/
   proposing connector-layer interop, FTS5 schema knowledge-share,
   and a co-spec for Phase 4 (project aliases / incremental
   indexing / starring). No merge expectation.
+- **Track B (shipped v0.5.1)** — TRAE SOLO SQLCipher unlock
+  via the `TRAE SOLO Safe Storage` keychain entry, with a
+  one-time GUI prompt on first ingest. Connector landed
+  (see `awl-core/src/connectors/trae_solo.rs`); schema
+  discovery auto-tries both Chrome salt variants
+  (`"peanuts"` for Chrome 80+ and `"saltysalt"` for the
+  legacy Chromium v10).

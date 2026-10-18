@@ -20,6 +20,12 @@ pub enum AppError {
     UnknownConnector(String),
     #[error("connector '{0}' reported: {1}")]
     Connector(String, String),
+    /// Stage 6 SQLCipher unlock flow for the TRAE SOLO
+    /// connector. Wraps the inner `TraeSoloError` so that
+    /// `?`-bubble works from the connector into the IPC
+    /// handlers.
+    #[error("trae_solo: {0}")]
+    TraeSolo(String),
     #[error("{0}")]
     Other(String),
 }

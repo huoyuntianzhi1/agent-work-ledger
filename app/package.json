@@ -1,7 +1,7 @@
 {
   "name": "agent-work-ledger",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "description": "Local-first agent work ledger — cross-agent aggregation + Eisenhower planning",
   "scripts": {

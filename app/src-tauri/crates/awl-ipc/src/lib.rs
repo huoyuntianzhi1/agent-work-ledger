@@ -836,6 +836,42 @@ fn scan_markdown_summary(
     })
 }
 
+/// Stage 6 / Track B: scan the TRAE SOLO SQLCipher-encrypted
+/// database. The first call per session triggers a macOS
+/// keychain GUI prompt via `awl_core::trae_solo::probe_state`.
+/// Until the user clicks "Always Allow" on the prompt, the
+/// connector returns a `skipped` scan with a `KeychainAccessDenied`
+/// error string and zero rows — the Home page card surfaces
+/// the same state to the user.
+#[tauri::command]
+fn scan_trae_solo(
+    state: State<'_, AppState>,
+    since_ms: Option<i64>,
+) -> AppResult<ScanReport> {
+    let mut conn = state.db.lock().expect("db mutex poisoned");
+    let connector = awl_core::connectors::trae_solo::TraeSolo;
+    run_connector_then_etl(&mut conn, |c| {
+        connector.scan(awl_core::connectors::ScanCtx {
+            conn: c,
+            source_id: "",
+            since_ms,
+        })
+    })
+}
+
+/// Stage 6 / Track B: surface the TRAE SOLO keychain / decryption
+/// state to the Home page card. Returns the same
+/// `TraeSoloState` enum that drives the connector's skip
+/// behaviour, so the UI can render the right copy: "no
+/// keychain entry" / "user denied" / "unlocked (N events)" /
+/// "schema mismatch" / "error: …". Pure read — does not write
+/// to the ledger, does not call the SQLCipher CLI, and does
+/// not need the DB.
+#[tauri::command]
+fn trae_solo_status() -> awl_core::trae_solo::TraeSoloState {
+    awl_core::trae_solo::probe_state()
+}
+
 /// Test-only entry point: scan a known connector kind against a
 /// caller-supplied connection. Used by integration tests so we can
 /// exercise the connector pipeline without spinning up Tauri.
@@ -892,7 +928,11 @@ pub fn scan_for_tests(
 /// user manually clicks a Rescan button.
 pub fn auto_rescan_all(db: Arc<Mutex<Connection>>) {
     use awl_core::connectors::kinds;
-    let targets: [&'static str; 10] = [
+    // Stage 6 (Track B) added `trae_solo`. The first call per
+    // session triggers a one-time macOS keychain GUI prompt;
+    // if the user denies, the connector returns a `skipped`
+    // scan and the rest of auto_rescan continues unaffected.
+    let targets: [&'static str; 11] = [
         kinds::CODEX,
         kinds::CLAUDE_CODE,
         kinds::CURSOR,
@@ -902,6 +942,7 @@ pub fn auto_rescan_all(db: Arc<Mutex<Connection>>) {
         kinds::DOUBAO_WORK,
         kinds::MINIMAX_CODE,
         kinds::TRAE,
+        kinds::TRAE_SOLO,
         kinds::MARKDOWN_SUMMARY,
     ];
     tracing::info!(
@@ -957,8 +998,26 @@ pub fn auto_rescan_all(db: Arc<Mutex<Connection>>) {
                 );
             }
             Err(e) => {
-                fail_count += 1;
-                tracing::warn!(kind, error = %e, "auto-rescan connector failed");
+                // Stage 6 (Track B / v0.5.1): trae_solo can fail
+                // with `connector not registered` when the
+                // keychain entry doesn't exist yet. That's
+                // not a real failure — just an early-skip.
+                // Count it as a no-op rather than a hard
+                // fail so the startup summary doesn't lie
+                // about health.
+                let msg = e.to_string();
+                if msg.contains("connector not registered")
+                    || msg.contains("no keychain entry")
+                {
+                    tracing::info!(
+                        kind,
+                        note = "skipped (keychain-gated, no source row yet)",
+                        "auto-rescan: connector not yet registered; skipping"
+                    );
+                } else {
+                    fail_count += 1;
+                    tracing::warn!(kind, error = %e, "auto-rescan connector failed");
+                }
             }
         }
     }
@@ -1761,6 +1820,8 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         scan_doubao_work,
         scan_minimax,
         scan_trae,
+        scan_trae_solo,
+        trae_solo_status,
         scan_markdown_summary,
         rebuild_sessions_summary,
         list_sessions_summary,
