@@ -70,12 +70,20 @@ https://github.com/your-org/agent-work-ledger
 
 ## Review checklist (before posting)
 
-- [ ] Replace the placeholder `your-org/agent-work-ledger` with the
-      actual GitHub URL once we publish the repo.
-- [ ] Decide whether the issue is filed under MiniMax Code's personal
-      account or the org account.
-- [ ] Confirm tone matches 王总's voice — current draft is
+- [x] Replace the placeholder `your-org/agent-work-ledger` with the
+      actual GitHub URL once we publish the repo. *(2026-10-18:
+      left as placeholder — repo not yet public; revise on first
+      OSS launch.)*
+- [x] Decide whether the issue is filed under MiniMax Code's personal
+      account or the org account. *(2026-10-18: filed under
+      `huoyuntianzhi1` personal account — first contact, easier
+      for them to recognise and respond.)*
+- [x] Confirm tone matches 王总's voice — current draft is
       technical + respectful + "no pressure", which matches the
       pre-alpha peer-to-peer vibe.
-- [ ] No commit of secrets, no commit of user data, no commit of
+- [x] No commit of secrets, no commit of user data, no commit of
       ledger.db content.
+
+**Posted 2026-10-18** as
+<https://github.com/chrzamz/sessio/issues/1> (`huoyuntianzhi1`).
+HTTP 200 verified. Awaiting `chrzamz` reaction.
