@@ -1,0 +1,19 @@
+# Build artifacts
+app/src-tauri/target/
+app/node_modules/
+app/dist/
+app/tsconfig.tsbuildinfo
+app/tsconfig.node.tsbuildinfo
+app/vite.config.d.ts
+app/vite.config.js
+# Tauri plugin generated
+app/src-tauri/gen/schemas/
+# Trash
+*.app/
+# OS
+.DS_Store
+# Local data — keep ledger.db but skip caches
+**/ledger.db
+**/ledger.db-shm
+**/ledger.db-wal
+**/backups/

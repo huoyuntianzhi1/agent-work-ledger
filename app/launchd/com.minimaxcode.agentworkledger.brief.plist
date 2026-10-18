@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Stage 5-E.3c LaunchAgent: every morning at 08:00 (user-local) the
+  app runs `--brief-once`, which computes the Eisenhower digest
+  over the last 24 h, picks the top-3 Q1 items, and writes the
+  result to the `daily_briefs` table. The home-page card reads the
+  cached row on cold start.
+
+  Install via the in-app "Install scanner daemon" action — the app
+  patches __BINARY_PATH__ with the absolute path of the running binary
+  before copying this template to ~/Library/LaunchAgents/.
+
+  Manual uninstall: launchctl bootout gui/com.minimaxcode.agentworkledger.brief
+  and delete the plist.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.minimaxcode.agentworkledger.brief</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__BINARY_PATH__</string>
+    <string>--brief-once</string>
+  </array>
+
+  <!-- Every day at 08:00 local time. launchd re-fires the agent
+       if the machine was asleep at 08:00, with a coalesce window
+       of 5 minutes to avoid a thundering herd on wake. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>WakeFromSleep</key>
+  <true/>
+
+  <!-- launchd re-runs us on a one-shot failure (capped at 1/min). -->
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <!-- Only run while logged in via Aqua (matches our menu-bar app). -->
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+
+  <!-- Don't keep alive after each tick — start calendar is one-shot. -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <!-- Logs land in /tmp/ so the user can `tail -F` from any shell. -->
+  <key>StandardOutPath</key>
+  <string>/tmp/agent-work-ledger.brief.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/agent-work-ledger.brief.err.log</string>
+
+  <!-- RunAtLoad makes the first brief fire immediately on
+       (re)install so the home-page card is populated without
+       waiting until 8 am. -->
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>

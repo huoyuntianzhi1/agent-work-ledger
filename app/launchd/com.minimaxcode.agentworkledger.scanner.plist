@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Stage 1-H-b2 LaunchAgent: re-ingest every supported connector every
+  300 seconds, even when the Agent Work Ledger window is closed.
+
+  Install via the in-app "Install scanner daemon" action — the app
+  patches __BINARY_PATH__ with the absolute path of the running binary
+  before copying this template to ~/Library/LaunchAgents/.
+
+  Manual uninstall: launchctl bootout gui/com.minimaxcode.agentworkledger.scanner
+  and delete the plist.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.minimaxcode.agentworkledger.scanner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__BINARY_PATH__</string>
+    <string>--scan-once</string>
+  </array>
+
+  <!-- Run every 300 seconds (5 minutes) when the user is logged in. -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+
+  <!-- launchd re-runs us on a one-shot failure. -->
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+
+  <!-- Only run while logged in via Aqua (matches our menu-bar app). -->
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+
+  <!-- Don't keep alive after every tick — StartInterval drives timing. -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <!-- Logs are written to ~/Library/Logs/AgentWorkLedger/. -->
+  <key>StandardOutPath</key>
+  <string>/tmp/agent-work-ledger.scanner.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/agent-work-ledger.scanner.err.log</string>
+
+  <!-- RunAtLoad makes the first scan fire immediately on (re)install. -->
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
