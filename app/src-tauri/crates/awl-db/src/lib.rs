@@ -429,4 +429,125 @@ mod tests {
             .unwrap();
         assert!(count >= 10);
     }
+
+    /// v0.5.5: deleting a `sources` row cascades to `raw_events`,
+    /// `sessions_summary`, and `connector_runs` via the schema's
+    /// `ON DELETE CASCADE` foreign keys. This is the contract the
+    /// Settings page relies on — `awl_ipc::delete_source` is just
+    /// `DELETE FROM sources WHERE id = ?1` and the cascade does the
+    /// rest. `plan_items.source_session_id` cascades through the
+    /// deleted `sessions_summary`, not directly from `sources`, so it
+    /// only fires when a referencing session exists.
+    #[test]
+    fn delete_source_cascades_to_children() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+
+        // Two sources — only `src_a` gets deleted, `src_b` survives.
+        conn.execute(
+            "INSERT INTO sources (id, kind, display_name, root_path, status, created_at, updated_at)
+             VALUES ('src_a', 'markdown_summary', 'A', '/tmp/a', 'readable',
+                     '2026-10-18T00:00:00Z', '2026-10-18T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sources (id, kind, display_name, root_path, status, created_at, updated_at)
+             VALUES ('src_b', 'markdown_summary', 'B', '/tmp/b', 'readable',
+                     '2026-10-18T00:00:00Z', '2026-10-18T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+
+        // Children for both sources so we can confirm src_b's survive.
+        for sid in ["src_a", "src_b"] {
+            conn.execute(
+                "INSERT INTO raw_events (id, source_id, event_type, occurred_at, payload, created_at)
+                 VALUES (?, ?, 'message', '2026-10-18T00:00:00Z', '{}', '2026-10-18T00:00:00Z')",
+                rusqlite::params![format!("evt_{sid}"), sid],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sessions_summary
+                 (id, source_id, started_at, ended_at, event_count, created_at, updated_at)
+                 VALUES (?, ?, '2026-10-18T00:00:00Z', '2026-10-18T00:01:00Z', 1,
+                         '2026-10-18T00:00:00Z', '2026-10-18T00:00:00Z')",
+                rusqlite::params![format!("sess_{sid}"), sid],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO connector_runs (id, source_id, started_at, status, events_count)
+                 VALUES (?, ?, '2026-10-18T00:00:00Z', 'ok', 1)",
+                rusqlite::params![format!("run_{sid}"), sid],
+            )
+            .unwrap();
+        }
+
+        // Delete src_a only.
+        let deleted = conn
+            .execute("DELETE FROM sources WHERE id = 'src_a'", [])
+            .unwrap();
+        assert_eq!(deleted, 1, "exactly one sources row should be deleted");
+
+        // src_a children must be gone, src_b children must survive.
+        let a_events: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM raw_events WHERE source_id = 'src_a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(a_events, 0, "src_a raw_events must cascade-delete");
+
+        let a_sessions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sessions_summary WHERE source_id = 'src_a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(a_sessions, 0, "src_a sessions_summary must cascade-delete");
+
+        let a_runs: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM connector_runs WHERE source_id = 'src_a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(a_runs, 0, "src_a connector_runs must cascade-delete");
+
+        let b_events: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM raw_events WHERE source_id = 'src_b'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(b_events, 1, "src_b raw_events must survive");
+
+        let b_sessions: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sessions_summary WHERE source_id = 'src_b'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(b_sessions, 1, "src_b sessions_summary must survive");
+    }
+
+    /// v0.5.5: `DELETE FROM sources WHERE id = ?1` against an unknown
+    /// id is a no-op. The IPC handler returns the `usize` from
+    /// `execute()` so the frontend can distinguish "已删除" from
+    /// "找不到该 id" without a second SELECT roundtrip.
+    #[test]
+    fn delete_source_unknown_id_is_noop() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+
+        let deleted = conn
+            .execute("DELETE FROM sources WHERE id = 'src_ghost'", [])
+            .unwrap();
+        assert_eq!(deleted, 0, "unknown id must report 0 rows affected");
+    }
 }

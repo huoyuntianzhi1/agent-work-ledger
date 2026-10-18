@@ -37,9 +37,11 @@ import type {
   AiSettings,
   AiStatus,
   AppSettings,
+  DeleteSourceReport,
   PruneReport,
   PromptTemplate,
   ResetReport,
+  SourceRow,
 } from "../lib/types";
 
 // Settings 页三大职责:
@@ -50,6 +52,10 @@ import type {
 //     看到本地 Ollama 联通性或云端 401。
 //  3) 唯一破坏性操作入口:重置所有 raw_events + sessions_summary +
 //     connector_runs(走 `reset_events`),Radix Dialog 二次确认兜底。
+//  4) v0.5.5: 单个数据源清理(走 `delete_source`),用于清掉 dev/test
+//     残留 row(典型是空 root_path / 0 events / 无 last_scan_at 的 stale
+//     source)。FK CASCADE 自动级联清 raw_events / sessions_summary /
+//     connector_runs / plan_items,所以一行就够。
 
 const PROVIDER_VALUES = ["local", "openai", "anthropic"] as const;
 type Provider = (typeof PROVIDER_VALUES)[number];
@@ -89,23 +95,42 @@ export default function SettingsPage() {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [lastReset, setLastReset] = useState<ResetReport | null>(null);
+  // v0.5.5: per-source cleanup. `pendingDelete` is the row the user
+  // has clicked "删除" on but hasn't confirmed yet; `lastDelete`
+  // surfaces the most recent DeleteSourceReport in a green banner so
+  // the user sees "已删除 N 个事件 (src_…)" feedback without a refetch.
+  const [sources, setSources] = useState<SourceRow[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<SourceRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [lastDelete, setLastDelete] = useState<DeleteSourceReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshAll = useCallback(async () => {
     setError(null);
     try {
-      const [s, st, app, ps] = await Promise.all([
+      const [s, st, app, ps, srcs] = await Promise.all([
         invoke<AiSettings>("ai_get_settings"),
         invoke<AiStatus>("ai_status"),
         invoke<AppSettings>("app_get_settings"),
         invoke<PromptTemplate[]>("app_list_prompts"),
+        invoke<SourceRow[]>("list_sources"),
       ]);
       setSettings(s);
       setStatus(st);
       setAppSettings(app);
       setPrompts(ps);
+      setSources(srcs);
     } catch (e) {
       setError(`加载设置失败:${String(e)}`);
+    }
+  }, []);
+
+  const refreshSources = useCallback(async () => {
+    try {
+      const srcs = await invoke<SourceRow[]>("list_sources");
+      setSources(srcs);
+    } catch (e) {
+      setError(`加载数据源失败:${String(e)}`);
     }
   }, []);
 
@@ -142,12 +167,38 @@ export default function SettingsPage() {
       const r = await invoke<ResetReport>("reset_events");
       setLastReset(r);
       setResetOpen(false);
+      // Sources themselves aren't deleted by reset_events — only the
+      // child rows. Refresh so the source list re-renders without
+      // event counts.
+      await refreshSources();
     } catch (e) {
       setError(`重置失败:${String(e)}`);
     } finally {
       setResetting(false);
     }
-  }, []);
+  }, [refreshSources]);
+
+  // v0.5.5: per-source cleanup. The dialog has already confirmed — the
+  // user clicked "是的,删除" — so this just hits the IPC, refreshes
+  // the list, and shows the result. FK CASCADE handles the child
+  // rows so the source count we render next refresh reflects reality.
+  const confirmDeleteSource = useCallback(async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const r = await invoke<DeleteSourceReport>("delete_source", {
+        id: pendingDelete.id,
+      });
+      setLastDelete(r);
+      setPendingDelete(null);
+      await refreshSources();
+    } catch (e) {
+      setError(`删除数据源失败:${String(e)}`);
+    } finally {
+      setDeleting(false);
+    }
+  }, [pendingDelete, refreshSources]);
 
   const saveAppSettings = useCallback(async () => {
     setAppSaving(true);
@@ -252,6 +303,13 @@ export default function SettingsPage() {
           上次重置:清除 {lastReset.raw_events_deleted} 条原始事件、{" "}
           {lastReset.sessions_summary_deleted} 个会话分区、{" "}
           {lastReset.connector_runs_deleted} 条 connector 运行记录。
+        </div>
+      )}
+      {lastDelete && (
+        <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+          {lastDelete.deleted > 0
+            ? `已删除数据源 ${lastDelete.source_id} (FK CASCADE 自动清理 raw_events / sessions_summary / connector_runs)。`
+            : `未找到数据源 ${lastDelete.source_id} — 可能已经被清理过。`}
         </div>
       )}
       {appSavedTick > 0 && (
@@ -590,6 +648,124 @@ export default function SettingsPage() {
             </Button>
           </CardFooter>
         </Card>
+
+        {/* v0.5.5: per-source cleanup. Each row is a registered source
+            the scanner has seen (some may be 0-event / no-root_path dev
+            residue); clicking 删除 opens the confirm dialog and the
+            IPC cascades to raw_events / sessions_summary /
+            connector_runs via schema FK. We render the full list
+            rather than filtering out "empty" rows because hide =
+            invisibly broken. */}
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>数据源管理</CardTitle>
+            <CardDescription>
+              扫描器已注册的全部 <code>sources</code> 行。点击删除会清掉
+              该 source 下所有原始事件与会话分区(走 FK CASCADE),不可撤销。
+              通常用于清理 dev/test 留下的空行(没有 <code>root_path</code>{" "}
+              且 <code>last_scan_at</code> 为空的 stale row)。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {sources.length === 0 && (
+              <p className="text-xs text-neutral-500">加载中…</p>
+            )}
+            {sources.map((s) => {
+              const isStale = !s.root_path && !s.last_scan_at;
+              return (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 rounded-md border border-neutral-200 bg-white p-3"
+                  data-testid={`source-row-${s.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-mono text-[11px] text-neutral-500">
+                        {s.kind}
+                      </span>
+                      <span className="text-sm font-medium">
+                        {s.display_name}
+                      </span>
+                      {isStale && (
+                        <Badge variant="warning" className="text-[10px]">
+                          stale
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-[10px] text-neutral-500">
+                      {s.id}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-neutral-500">
+                      <span>root: {s.root_path || "—"}</span>
+                      <span>status: {s.status}</span>
+                      <span>
+                        last_scan: {s.last_scan_at?.slice(0, 19) ?? "—"}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPendingDelete(s)}
+                    data-testid={`source-delete-${s.id}`}
+                  >
+                    删除
+                  </Button>
+                </div>
+              );
+            })}
+          </CardContent>
+          <CardFooter className="justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refreshSources()}
+              data-testid="sources-refresh"
+            >
+              刷新
+            </Button>
+          </CardFooter>
+        </Card>
+
+        {/* Per-source confirm dialog. One dialog instance reused for
+            every row — `pendingDelete` carries the row context, and
+            we close it via setPendingDelete(null) on cancel / success. */}
+        <Dialog
+          open={pendingDelete !== null}
+          onOpenChange={(open) => !open && setPendingDelete(null)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>确认删除该数据源?</DialogTitle>
+              <DialogDescription>
+                即将永久删除 <code>{pendingDelete?.kind}</code>{" "}
+                (<code>{pendingDelete?.id}</code>) 及其下所有{" "}
+                <code>raw_events</code> / <code>sessions_summary</code>{" "}
+                / <code>connector_runs</code> 行(走 FK CASCADE)。此操作不可撤销。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleting}
+              >
+                取消
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleting}
+                onClick={() => confirmDeleteSource()}
+                data-testid="source-delete-confirm"
+              >
+                {deleting ? "删除中…" : "是的,删除"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* v0.4.3: data retention. `event_retention_days` lives in
             AppSettings (saved above) and is the same knob the

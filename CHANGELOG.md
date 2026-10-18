@@ -8,6 +8,49 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.5 — 2026-10-18
+
+- **Per-source cleanup (`delete_source` IPC + Settings card).**
+  The audit of the `sources` table (run while preparing v0.5.4's
+  release notes) found 3 stale `markdown_summary` rows from
+  dev/test sessions — no `root_path`, no `last_scan_at`, 0
+  events. Without an IPC the only way to clean them was a direct
+  `sqlite3 ledger.db "DELETE FROM sources WHERE id = ..."`,
+  fine for me, hostile for the user. The new affordance:
+- **`awl_ipc::delete_source(state, id: String) -> AppResult<usize>`**
+  is the entire handler — `DELETE FROM sources WHERE id = ?1`.
+  Returns `usize` so the UI can distinguish "已删除" from
+  "找不到该数据源" without a second SELECT. The schema's FK
+  CASCADE does the rest (`raw_events` / `sessions_summary` /
+  `connector_runs` cascade directly; `plan_items.source_session_id`
+  cascades through the deleted `sessions_summary`).
+- **New "数据源管理" card on `pages/Settings.tsx`**, between
+  本地配置 and 数据保留. Shows every registered source with
+  `kind` + `display_name` + a `stale` badge when both
+  `root_path` and `last_scan_at` are empty. Per-row 删除 button
+  opens a Radix confirm dialog (mirrors the existing
+  "重置全部事件" pattern). The list is rendered in full rather
+  than filtered out — hide = invisibly broken, the user has
+  to *see* the stale row to delete it.
+- **We deliberately never auto-prune.** The Connectors scanner
+  creates a `sources` row on first discovery; deleting one is a
+  manual user action. A future scan that re-discovers the same
+  `kind` + `root_path` fingerprint recreates a fresh row, but
+  this is a "delete this row, it was junk" affordance, not a
+  regular workflow.
+- 2 new tests in `awl-db::tests` cover the FK CASCADE contract:
+  `delete_source_cascades_to_children` proves deleting one
+  source removes its `raw_events` / `sessions_summary` /
+  `connector_runs` while a sibling source's rows survive;
+  `delete_source_unknown_id_is_noop` proves an unknown id
+  returns 0 rows affected so the IPC can map cleanly to the
+  UI. 146 total pass (was 144).
+- Frontend changes touch `lib/types.ts` (new `DeleteSourceReport`)
+  and `pages/Settings.tsx` (新的 card + dialog + 横幅 + 把
+  `list_sources` 加到 `refreshAll`). No DB schema change; the
+  FK CASCADE that makes this work was already in place from
+  v0.5.0's migration.
+
 ## v0.5.4 — 2026-10-18
 
 - **Cross-source search polish.** The Cmd-K search overlay

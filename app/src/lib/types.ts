@@ -216,6 +216,15 @@ export type EtlReport = {
   duration_ms: number;
 };
 
+// v0.5.5: returned by `delete_source`. Mirrors the Rust handler —
+// `deleted === 0` means the id was unknown (already cleaned up, or
+// never existed), so the UI can show "已删除 (N 行受影响)" / "找不到该数据源"
+// distinctly without a second roundtrip.
+export type DeleteSourceReport = {
+  deleted: number;
+  source_id: string;
+};
+
 // One row from `window_reports` — a daily or weekly digest the user
 // requested. Headline / bullets / themes / project_breakdown come out
 // of the LLM layer (or the heuristic fallback) and are persisted as a

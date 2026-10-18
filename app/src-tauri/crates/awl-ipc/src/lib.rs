@@ -148,6 +148,25 @@ fn list_sources(state: State<'_, AppState>) -> AppResult<Vec<SourceRow>> {
     Ok(rows)
 }
 
+/// v0.5.5: delete a single source row by id. The schema's FK CASCADE
+/// (raw_events / sessions_summary / connector_runs) cleans up child
+/// rows automatically; `plan_items.source_session_id` cascades through
+/// the deleted sessions_summary. Returns the number of `sources` rows
+/// actually deleted (0 if the id was unknown so the UI can show
+/// "已删除" / "找不到数据源" distinctly).
+///
+/// Manual user-driven cleanup only — we never auto-prune empty
+/// sources. The Settings page shows every row, dev/test residue
+/// included, and lets the user decide. The Connectors scanner never
+/// recreates a row whose `id` was user-deleted unless a future scan
+/// re-discovers it under the same `kind` + `root_path` fingerprint.
+#[tauri::command]
+fn delete_source(state: State<'_, AppState>, id: String) -> AppResult<usize> {
+    let conn = state.db.lock().expect("db mutex poisoned");
+    let deleted = conn.execute("DELETE FROM sources WHERE id = ?1", params![id])?;
+    Ok(deleted)
+}
+
 /// Most recent events across all sources, ordered by **ingest time**
 /// (`created_at DESC`) so the user sees the most recently captured work
 /// regardless of when the underlying agent actually emitted it.
@@ -1808,6 +1827,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
     builder.invoke_handler(tauri::generate_handler![
         get_health,
         list_sources,
+        delete_source,
         list_recent_events,
         list_timeline_events,
         list_supported_connectors,
