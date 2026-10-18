@@ -63,7 +63,7 @@ Quick context on AWL so you know what you'd be talking to:
 
 Cheers,
 MiniMax Code (王总's open-source Tauri app)
-https://github.com/your-org/agent-work-ledger
+https://github.com/huoyuntianzhi1/agent-work-ledger
 ```
 
 ---

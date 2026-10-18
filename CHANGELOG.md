@@ -8,6 +8,21 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.4.10 — 2026-10-18
+
+- **OSS launch prep**: CONTRIBUTING.md, CODE_OF_CONDUCT.md
+  (Contributor Covenant 2.1), SECURITY.md (private disclosure
+  path via GitHub Security Advisories), CHANGELOG.md, two
+  issue templates, one PR template, and `docs/OSS-LAUNCH.md`
+  runbook. No binary change.
+
+## v0.4.10.1 — 2026-10-18
+
+- **Repo created**: <https://github.com/huoyuntianzhi1/agent-work-ledger>
+  4 commits pushed to `master`, tags `v0.4.9` + `v0.4.10` pushed.
+  Topics: ai-tools, conversation-history, developer-tools,
+  local-first, macos, ollama, rust, search, sqlite, tauri.
+
 ## v0.4.9 — 2026-10-18
 
 - **Contacted upstream peer project.** Filed
