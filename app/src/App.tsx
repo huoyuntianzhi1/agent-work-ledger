@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { exit as tauriExit } from "@tauri-apps/api/app";
 import { Link, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover";
 import { Calendar } from "./components/ui/calendar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog";
+import { Button } from "./components/ui/button";
 import { cn } from "./lib/utils";
 import type { BriefDelta, DailyBrief } from "./lib/types";
 
@@ -134,6 +145,22 @@ export default function App() {
   const [brief, setBrief] = useState<DailyBrief | null>(null);
   const [briefBusy, setBriefBusy] = useState(false);
 
+  // v0.5.6: in-app quit-confirm dialog. The Rust
+  // `RunEvent::ExitRequested` arm intercepts Cmd+Q / Dock Quit
+  // and emits `show-quit-confirm`; the dialog above the
+  // event-listener asks the user to confirm before we
+  // actually `await invoke("confirm_quit")` +
+  // `await tauriExit(0)`. Without this dialog a user who
+  // hits Cmd+Q thinking it's an editor shortcut (or just
+  // muscle-memory) would silently lose their background
+  // scanner for the rest of the session.
+  const [quitOpen, setQuitOpen] = useState(false);
+  // v0.5.6: a transient banner shown when the user closes
+  // the window (which actually hides to tray, not quits).
+  // Helps disambiguate "the dock icon disappeared because I
+  // hid the window" from "the app actually quit".
+  const [hiddenHint, setHiddenHint] = useState<string | null>(null);
+
   // Phase D.3: time-window selector for all 7 scan buttons.
   //   liveMode === true  → since_ms = now - 24h (rolling window)
   //   liveMode === false → since_ms = sinceDate (user-picked calendar date)
@@ -199,6 +226,72 @@ export default function App() {
     refreshAiSettings();
     refreshAiStatus();
   }, [refreshHealth, refreshSources, refreshEvents, refreshLaunchd, refreshAiSettings, refreshAiStatus]);
+
+  // v0.5.6: lifecycle event listeners. Two flows:
+  //  - `show-quit-confirm`: emitted by the Rust
+  //    `RunEvent::ExitRequested` arm when the user hits Cmd+Q
+  //    or Dock Quit for the first time. We surface a Radix
+  //    confirm dialog; on "Quit" we set the Rust flag via
+  //    `confirm_quit` IPC, then call `tauriExit(0)`. On
+  //    "Cancel" we just close the dialog — the app stays
+  //    running.
+  //  - `window-hidden`: emitted by `WindowEvent::CloseRequested`
+  //    when the user closes the window. The Rust handler
+  //    `prevent_close()`s and `hide()`s the window, so this
+  //    is purely a "I just closed it on purpose, help me
+  //    find it again" UX nudge — a yellow banner pointing
+  //    at the menu bar tray icon auto-dismisses after 6 s.
+  useEffect(() => {
+    const unlistens: UnlistenFn[] = [];
+    let cancelled = false;
+    (async () => {
+      const u1 = await listen<void>("show-quit-confirm", () => {
+        setQuitOpen(true);
+      });
+      const u2 = await listen<void>("window-hidden", () => {
+        setHiddenHint(
+          "窗口已隐藏到菜单栏 — 点击右上角菜单栏图标重新打开。扫描仍在后台运行。",
+        );
+        // Auto-dismiss after 6 s so we don't litter the page
+        // with stale hints. The lifecycle log on disk is
+        // the durable record.
+        setTimeout(() => setHiddenHint(null), 6000);
+      });
+      if (cancelled) {
+        u1();
+        u2();
+      } else {
+        unlistens.push(u1, u2);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlistens.forEach((u) => u());
+    };
+  }, []);
+
+  const confirmQuit = useCallback(async () => {
+    setQuitOpen(false);
+    try {
+      // The IPC sets `awl_core::lifecycle::QUIT_CONFIRMED`
+      // and writes `exit-confirmed` to lifecycle.log. The
+      // run-loop arm will then see the flag set on the
+      // next `RunEvent::ExitRequested` and let the process
+      // exit instead of re-prompting.
+      await invoke("confirm_quit");
+      // Tiny delay so the IPC log line is flushed before
+      // the run-loop writes `exit-allowed` — the tail
+      // should always read in order.
+      await new Promise((r) => setTimeout(r, 20));
+      await tauriExit(0);
+    } catch (e) {
+      // If the exit call itself fails (rare — usually only
+      // when the user double-clicks the Quit button), re-
+      // open the dialog so they can try again.
+      console.error("confirmQuit failed", e);
+      setQuitOpen(true);
+    }
+  }, []);
 
   const refreshBrief = useCallback(async () => {
     try {
@@ -416,6 +509,57 @@ export default function App() {
 
   return (
     <div className="min-h-screen p-6">
+      {/* v0.5.6: dismiss-on-its-own banner that fires when the
+          user closes the window. The Rust side keeps the app
+          alive in the menu bar tray, but without this hint
+          users interpreted the disappearing dock icon as a
+          crash ("应用老是意外退出"). 6 s auto-dismiss keeps
+          the page tidy; the lifecycle log on disk is the
+          durable record. */}
+      {hiddenHint && (
+        <div
+          className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+          data-testid="window-hidden-hint"
+        >
+          {hiddenHint}
+        </div>
+      )}
+      {/* v0.5.6: quit-confirm dialog. Triggered by the Rust
+          `RunEvent::ExitRequested` arm when the user hits
+          Cmd+Q or Dock Quit. The flag in
+          `awl_core::lifecycle::QUIT_CONFIRMED` plus the
+          `app.exit(0)` from `@tauri-apps/api/app` mean a
+          muscle-memory Cmd+Q can no longer silently tear
+          down the background scanner. */}
+      <Dialog open={quitOpen} onOpenChange={setQuitOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认退出 Agent Work Ledger?</DialogTitle>
+            <DialogDescription>
+              退出后,每 5 分钟一次的 launchd 自动扫描会停止,新写
+              的 agent 事件不会进入台账。可以重新打开 app 恢复扫描。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setQuitOpen(false)}
+              data-testid="quit-dialog-cancel"
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => confirmQuit()}
+              data-testid="quit-dialog-confirm"
+            >
+              是的,退出
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <header className="mb-6 flex items-baseline justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Agent 工作台账</h1>

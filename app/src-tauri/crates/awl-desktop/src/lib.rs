@@ -6,10 +6,14 @@
 //! lives in `awl-ipc`; we just register them in `generate_handler!` here.
 
 use awl_db::{open_db, resolve_data_dir};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 mod launchd;
 mod window_state;
+// v0.5.6: moved to `awl_core::lifecycle` so `awl-ipc` can
+// share the flag and the log helper without a workspace
+// dependency cycle. The functions are re-imported here by
+// their full path to keep the call sites readable.
 
 /// Menu item id for "Show window".
 const MENU_ID_SHOW: &str = "show";
@@ -100,6 +104,14 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // v0.5.6: every meaningful lifecycle event gets a
+            // timestamped line in `lifecycle.log` so the next
+            // time the user reports "app 老是意外退出" we have
+            // ground truth on disk instead of guessing from
+            // macOS Console. `startup` is the first line written
+            // so a tail of the file always opens with a known
+            // anchor.
+            awl_core::lifecycle::log_event("startup");
             let dir = resolve_data_dir().map_err(|e| {
                 tracing::error!(error = %e, "failed to resolve data dir");
                 e
@@ -252,6 +264,17 @@ pub fn run() {
                                 {
                                     window_state::save(&save_dir, &s);
                                 }
+                                // v0.5.6: distinguish "user closed the
+                                // window on purpose" from "app is gone"
+                                // for the next time someone asks.
+                                // `startup` + `window-hidden` + later
+                                // `exit-requested` (or its absence) tell
+                                // us exactly which path the user took.
+                                awl_core::lifecycle::log_event("window-hidden");
+                                let _ = save_window.app_handle().emit(
+                                    "window-hidden",
+                                    (),
+                                );
                                 let _ = save_window.hide();
                                 api.prevent_close();
                             }
@@ -280,7 +303,42 @@ pub fn run() {
     // returns one with all `#[tauri::command]` functions wired in via
     // a single `generate_handler!` invocation that lives in the
     // `awl-ipc` crate (where the command fns are private).
+    //
+    // v0.5.6: `.build(...).run(handler)` instead of `.run(...)` so
+    // we can intercept `RunEvent::ExitRequested` and gate it on
+    // `awl_core::lifecycle::quit_confirmed()`. Cmd+Q / Dock Quit /
+    // `app.exit(0)` from the tray menu all flow through this arm
+    // — when the flag is unset (user hasn't clicked Quit in the
+    // in-app dialog) we `prevent_exit()` and emit `show-quit-confirm`
+    // to the frontend, which pops a Radix dialog. The IPC
+    // `confirm_quit` sets the flag and re-triggers exit, which we
+    // then allow.
     awl_ipc::register(builder)
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                if awl_core::lifecycle::quit_confirmed() {
+                    // User already confirmed via the in-app dialog.
+                    // Write a final "exit-allowed" line so a tail
+                    // of lifecycle.log shows the full chain:
+                    // startup → … → window-hidden → exit-requested
+                    // → exit-prevented → (dialog opens) →
+                    // exit-confirmed → exit-allowed.
+                    awl_core::lifecycle::log_event("exit-allowed");
+                    return;
+                }
+                awl_core::lifecycle::log_event("exit-requested");
+                // First-time quit attempt: keep the process alive
+                // and ask the frontend to show the confirm dialog.
+                // If the user truly wants to quit, they'll click
+                // "Quit" in the dialog → `confirm_quit` IPC →
+                // `mark_quit_confirmed()` + `app.exit(0)` → we
+                // see ExitRequested again with the flag set.
+                api.prevent_exit();
+                awl_core::lifecycle::log_event("exit-prevented");
+                let _ = app_handle.emit("show-quit-confirm", ());
+            }
+            _ => {}
+        });
 }

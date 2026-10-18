@@ -891,6 +891,29 @@ fn trae_solo_status() -> awl_core::trae_solo::TraeSoloState {
     awl_core::trae_solo::probe_state()
 }
 
+/// v0.5.6: confirm the user clicked "Quit" in the in-app
+/// confirm dialog. The flag in
+/// `awl_core::lifecycle::QUIT_CONFIRMED` lets the
+/// `RunEvent::ExitRequested` arm recognise the next exit as
+/// user-confirmed and pass it through. The companion
+/// `app.exit(0)` call is dispatched by the **frontend** via
+/// `import { exit } from '@tauri-apps/api/app'` immediately
+/// after this IPC returns, so the IPC handler itself doesn't
+/// need an `AppHandle` (which would force a Tauri runtime
+/// feature onto this crate just for one call). Order of
+/// operations: `mark_quit_confirmed` → log → IPC returns →
+/// frontend `await exit(0)` → Tauri emits ExitRequested →
+/// handler sees flag set → log "exit-allowed" → process exits.
+/// The lifecycle log therefore contains the full chain
+/// (`exit-confirmed` then `exit-allowed`) even when the user
+/// takes the explicit-confirm path.
+#[tauri::command]
+fn confirm_quit() -> AppResult<()> {
+    awl_core::lifecycle::mark_quit_confirmed();
+    awl_core::lifecycle::log_event("exit-confirmed");
+    Ok(())
+}
+
 /// Test-only entry point: scan a known connector kind against a
 /// caller-supplied connection. Used by integration tests so we can
 /// exercise the connector pipeline without spinning up Tauri.
@@ -1828,6 +1851,7 @@ pub fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder
         get_health,
         list_sources,
         delete_source,
+        confirm_quit,
         list_recent_events,
         list_timeline_events,
         list_supported_connectors,

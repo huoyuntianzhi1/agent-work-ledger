@@ -8,6 +8,66 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.6 — 2026-10-18
+
+- **Quit-confirm dialog + lifecycle log.** A real user
+  complaint ("应用老是意外退出") drove this one. The fix
+  has two parts: a confirmation dialog before the app
+  actually quits, and a persistent on-disk lifecycle log
+  so the next time someone reports "退出" we have ground
+  truth instead of guessing from macOS Console.
+- **`RunEvent::ExitRequested` arm** (in
+  `awl-desktop::run`) intercepts Cmd+Q / Dock Quit /
+  `app.exit(0)` and gates it on
+  `awl_core::lifecycle::quit_confirmed()`. First quit
+  attempt: log `exit-requested`, `api.prevent_exit()`,
+  log `exit-prevented`, emit `show-quit-confirm` to
+  the frontend. The frontend surfaces a Radix dialog
+  ("退出后,每 5 分钟一次的 launchd 自动扫描会停止").
+  On "是的,退出" the `confirm_quit` IPC sets the flag +
+  writes `exit-confirmed`, and the frontend calls
+  `await exit(0)` from `@tauri-apps/api/app`. The next
+  `RunEvent::ExitRequested` finds the flag set, writes
+  `exit-allowed`, and the runtime actually exits.
+- **`lifecycle.log`** at
+  `~/Library/Application Support/com.minimaxcode.agentworkledger/lifecycle.log`
+  (1 MiB rolling rotation, single generation). Lines
+  look like `2026-10-18T10:42:13Z\texit-requested`. The
+  module lives in `awl-core` (not `awl-desktop`) so
+  `awl-ipc` and `awl-desktop` can share the flag and
+  the log helper without a workspace dependency
+  cycle. Writes are best-effort; a disk full or
+  read-only volume must never block startup.
+- **`window-hidden` event + amber banner.** The
+  `WindowEvent::CloseRequested` arm was already
+  correctly gating the close-button path (window
+  hides, app keeps running, tray icon stays), but
+  users saw the dock icon disappear and assumed a
+  crash. v0.5.6 emits `window-hidden` and the
+  frontend renders an amber banner: "窗口已隐藏到
+  菜单栏 — 点击右上角菜单栏图标重新打开。扫描仍在
+  后台运行。" Auto-dismisses after 6 s.
+- **`confirm_quit` IPC** in `awl-ipc` is a tiny
+  command: `mark_quit_confirmed()` + log
+  `exit-confirmed`. No `AppHandle` parameter (which
+  would force a Tauri runtime feature onto `awl-ipc`
+  just for one call) — the actual `app.exit(0)` is
+  dispatched by the frontend via
+  `import { exit } from '@tauri-apps/api/app'`
+  immediately after the IPC returns. Capability
+  `core:app:allow-exit` added to
+  `crates/awl-desktop/capabilities/default.json`.
+- 3 new tests in `awl-core::lifecycle::tests`:
+  `log_event_writes_line_with_timestamp`,
+  `rotate_renames_log_when_over_cap`, and
+  `quit_confirmed_flag_round_trip`. 149 total pass
+  (was 146).
+- Frontend changes touch `App.tsx` (the lifecycle
+  event listeners via `listen()` from
+  `@tauri-apps/api/event`, the confirm dialog using
+  the existing Radix `Dialog` component, the
+  hidden-hint banner). No DB schema change.
+
 ## v0.5.5 — 2026-10-18
 
 - **Per-source cleanup (`delete_source` IPC + Settings card).**

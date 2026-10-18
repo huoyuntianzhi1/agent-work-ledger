@@ -9,6 +9,10 @@ pub mod app_settings;
 pub mod brief;
 pub mod connectors;
 pub mod eisenhower;
+// v0.5.6: GUI lifecycle log + quit-confirmed flag. Lives in
+// `awl-core` (not `awl-desktop`) so both `awl-ipc` and
+// `awl-desktop` can import it without a workspace cycle.
+pub mod lifecycle;
 pub mod error;
 pub mod etl;
 pub mod idb;
