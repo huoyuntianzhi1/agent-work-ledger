@@ -31,7 +31,12 @@ const FORMAT_VERSION: u32 = 1;
 /// Keep in sync with the explicit early-return checks at the top of
 /// `lib.rs::run()`. New CLI flags belong here too so the guard in
 /// `setup` can recognise them defensively.
-pub const CLI_FLAGS: &[&str] = &["--scan-once", "--brief-once"];
+pub const CLI_FLAGS: &[&str] = &[
+    "--scan-once",
+    "--brief-once",
+    "--install-launchd",
+    "--uninstall-launchd",
+];
 
 /// Detect whether `args` (typically `std::env::args().collect()`)
 /// contains any known CLI mode flag. The check is by exact string

@@ -8,6 +8,7 @@
 use awl_db::{open_db, resolve_data_dir};
 use tauri::Manager;
 
+mod launchd;
 mod window_state;
 
 /// Menu item id for "Show window".
@@ -31,6 +32,8 @@ pub fn run() {
     let argv: Vec<String> = std::env::args().collect();
     let scan_once_requested = argv.iter().any(|a| a == "--scan-once");
     let brief_once_requested = argv.iter().any(|a| a == "--brief-once");
+    let install_launchd_requested = argv.iter().any(|a| a == "--install-launchd");
+    let uninstall_launchd_requested = argv.iter().any(|a| a == "--uninstall-launchd");
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -48,6 +51,48 @@ pub fn run() {
     if brief_once_requested {
         awl_ipc::run_brief_once_mode();
         return;
+    }
+
+    // Stage 1-H-b2 launchd CLI plumbing. v0.5.3 hotfix: the v0.5.0
+    // workspace split silently broke the loaded LaunchAgent (the
+    // plist still pointed at the old `agent-work-ledger` binary
+    // name; the new name is `awl-desktop`). These two flags let
+    // users re-install a working scanner + brief agent after a
+    // v0.5.0+ upgrade, or clean up after uninstall. Both flags
+    // early-return so they touch no Tauri runtime state.
+    if install_launchd_requested {
+        // argv[0] in a macOS .app bundle is the absolute path of
+        // the executable inside Contents/MacOS, which is exactly
+        // the path launchd should call. Passing argv[0] verbatim
+        // (after canonicalization via Path::canonicalize for the
+        // symlink-resolved absolute form) keeps the plist stable
+        // across reinstalls of the .app via `cp -R`.
+        let raw = argv.first().map(String::as_str).unwrap_or("");
+        let resolved = std::fs::canonicalize(raw)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| raw.to_string());
+        match launchd::install(&resolved) {
+            Ok(report) => {
+                println!("{}", report);
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("awl-desktop: install-launchd failed: {}", e);
+                std::process::exit(2);
+            }
+        }
+    }
+    if uninstall_launchd_requested {
+        match launchd::uninstall() {
+            Ok(report) => {
+                println!("{}", report);
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("awl-desktop: uninstall-launchd failed: {}", e);
+                std::process::exit(2);
+            }
+        }
     }
 
     let builder = tauri::Builder::default()

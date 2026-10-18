@@ -8,6 +8,39 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.3 — 2026-10-18
+
+- **Hotfix — macOS LaunchAgent plist after workspace split.**
+  v0.5.0 split `awl-desktop` out as a separate crate and renamed
+  the binary from `agent-work-ledger` to `awl-desktop`. The
+  plist that was loaded into `~/Library/LaunchAgents/` for the
+  per-5-minute auto-rescan was never rewritten, so launchd tried
+  to spawn a binary that no longer existed. Every 5 minutes the
+  rescan failed silently — no events were ingested by the
+  background scanner, only by the manually-triggered `--scan-once`
+  or by an active GUI session. Fixed by adding two CLI flags:
+- **`--install-launchd`** — `awl-desktop --install-launchd` boots
+  out any existing agent with our label (success or failure),
+  deletes the existing plist files, writes a fresh scanner +
+  brief pair to `~/Library/LaunchAgents/`, and bootstraps both
+  under the user's GUI launchd domain. Re-running is safe and
+  idempotent. Plist templates are embedded via `include_str!`
+  with `__BINARY_PATH__` substituted to `argv[0]`'s canonical
+  path (symlink-resolved absolute form).
+- **`--uninstall-launchd`** — `awl-desktop --uninstall-launchd`
+  reverses the install. Idempotent.
+- 5 new tests in `awl-desktop::launchd::tests`: the canonical
+  placeholder survives in both templates, substitution replaces
+  only the `<string>` token (header comment is left intact),
+  canonical token is present in both templates, `gui_domain`
+  always returns `gui/<UID>` shape, and `install("")` is
+  rejected. 148 total pass (was 143).
+- **One-line user action after upgrading**: open a Terminal
+  and run `/Applications/Agent\ Work\ Ledger.app/Contents/MacOS/awl-desktop
+  --install-launchd`. After that, `tail -F
+  /tmp/agent-work-ledger.scanner.out.log` should show a tick
+  every 5 minutes with `scan-once: complete, success`.
+
 ## v0.5.2 — 2026-10-18
 
 - **Hotfix — keychain service name for `trae_solo`.** v0.5.1
