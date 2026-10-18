@@ -1,49 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/awl-core",
+    "crates/awl-db",
+    "crates/awl-export",
+    "crates/awl-ipc",
+    "crates/awl-desktop",
+]
+
+# A minimal root `[package]` block so `tauri build` (which shells
+# out to `cargo metadata`) has a `package` entry to read even when
+# the actual binary lives in `crates/awl-desktop/`. The real
+# crate data — including `[lib]`, `[[bin]]`, `[build-dependencies]`,
+# and the binary source — stays in
+# `crates/awl-desktop/Cargo.toml`; the root manifest has no
+# `.rs` files of its own.
 [package]
 name = "agent-work-ledger"
-version = "0.1.0"
-description = "Local-first agent work ledger"
-authors = ["you"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Agent Work Ledger — local-first macOS desktop app"
+publish = false
+
+# All actual source code is in the member crates. The root
+# gets an empty `src/lib.rs` (a 1-line doc-comment stub) so
+# `cargo metadata` has a target to report; `cargo build` at
+# the workspace root will still skip it if you ask for a
+# specific member. auto* flips are left at their defaults so
+# the empty lib is auto-discovered.
+
+# Agent Work Ledger is a private workspace; do not publish any of these
+# crates to crates.io even by accident.
+[workspace.package]
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.77"
-
-[lib]
-name = "agent_work_ledger_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
-
-[dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-shell = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-chrono = { version = "0.4", features = ["serde"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
-thiserror = "1"
-anyhow = "1"
-dirs = "5"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zstd = "0.13"
-walkdir = "2"
-regex = "1"
-uuid = { version = "1", features = ["v4", "serde"] }
-sha2 = "0.10"
-# Stage 5.5: bulk Sessions export as a single multi-file .zip
-# (one .md per partition, plus a top-level INDEX.md).
-zip = { version = "2", default-features = false, features = ["deflate"] }
-# Tauri 2 IPC serialises args via JSON, so binary bytes cross the
-# boundary as base64-encoded strings.
-base64 = "0.22"
-
-[features]
-# default: nothing extra
-default = []
-# future: macOS menu bar
-macos-tray = []
+license = "MIT OR Apache-2.0"
 
 [profile.release]
 panic = "abort"

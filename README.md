@@ -64,7 +64,12 @@ actually want on a single machine. Concretely:
   payload hits SQLite. Cloud providers get the redactor bolted on at
   the IPC layer; no LLM provider call ever sees a raw secret.
 
-## Connectors (v0.4.8)
+## Connectors (v0.5.0 — 11 sources)
+
+> Unchanged since v0.4.5 except for the workspace split (the
+> ten parsing modules now live in `awl-core/src/connectors/`).
+> Track B (v0.5.1) will add the twelfth: SQLCipher-decrypted
+> `trae_solo`.
 
 | Connector | Source path | Status | Last seen |
 |---|---|---|---|
@@ -114,39 +119,68 @@ app/src-tauri/target/release/bundle/macos/Agent Work Ledger.app
 app/src-tauri/target/release/bundle/dmg/rw.<rev>.Agent Work Ledger_0.4.8_aarch64.dmg
 ```
 
-## Architecture (one screen, v0.4.8)
+## Architecture (one screen, v0.5.0)
 
 - **Tauri 2 shell** — single window, webview, native menu
-- **Rust core** in `app/src-tauri/src/`:
-  - `lib.rs` — DB schema migration, IPC surface, background loop, CLI
-    flags (`--scan-once`, `--brief-once`)
-  - `connectors/` — one module per agent
-    (`codex.rs`, `claude.rs`, `opencode.rs`, `workbuddy.rs`,
-    `doubao.rs`, `minimax.rs`, `trae.rs`, `cursor.rs`,
-    `markdown_summary.rs`)
-  - `redactor.rs` — privacy pre-filter (OpenAI sk-* / Anthropic /
-    Bearer / JWT / 32-char hex) + DB-driven custom rules
-  - `idb.rs` — thin FFI over `libleveldb` for Chromium IndexedDB
-  - `etl.rs` — raw_events → sessions_summary aggregation
-  - `search.rs` — payload-aware FTS-style event search
-  - `brief.rs` — top-3 Q1 morning brief + source rollup + day-over-day
-    delta (v0.4.2)
-  - `eisenhower.rs` — 4-quadrant matrix with heuristic + LLM blend
-  - `planner.rs` — daily / weekly plan templates
-  - `export.rs` — JSON / CSV / `.zip` (single .md per partition +
-    `INDEX.md`) (Stage 5.5)
-  - `retention.rs` — 90-day raw_events auto-prune (v0.4.3)
-  - `window_state.rs` — cross-launch window position persistence,
-    skipped for `--scan-once` / `--brief-once` (v0.4.6)
-  - `app_settings.rs` — settings.json (Prompt library + retention +
-    redact flags + summary dir)
-  - `ai.rs` — local Ollama HTTP/1.1 client (zero new deps)
+- **Rust core** split into 5 crates (Track A of v0.5.0, see
+  `docs/V0.5.0-CHANGELOG.md`) under `app/src-tauri/crates/`:
+  - `awl-core/` — pure domain logic.
+    - 12 modules: `ai.rs` (Ollama client), `app_settings.rs`
+      (settings I/O), `brief.rs` (morning top-3), `eisenhower.rs`
+      (4-quadrant matrix), `error.rs` (one `AppError` shared
+      across crates), `etl.rs` (ingest pipeline), `idb.rs`
+      (LevelDB FFI), `planner.rs` (promote + templates),
+      `redactor.rs` (3 API-key patterns + cloud gate),
+      `reports.rs` (HTML templates), `search.rs` (payload FTS),
+      `summary.rs` (heuristic fallback)
+    - 10 connectors: `claude`, `codex`, `cursor`, `doubao`,
+      `markdown_summary`, `minimax`, `opencode`, `trae`,
+      `workbuddy`, plus `mod.rs` (12th)
+    - `build.rs` runs linker-level search for the LevelDB
+      symbols that Cursor's `state.vscdb` plaintext stash
+      depends on
+  - `awl-db/` — schema v4 + `migrate` + `backup_ledger_pre_v4` +
+    `is_v3_schema` + `migrate_for_tests` + 6 schema tests +
+    `retention.rs` (`DEFAULT_RETENTION_DAYS = 90`).
+    **Dependencies**: `awl-core` (for `redactor` +
+    `etl` during ingest).
+  - `awl-export/` — bulk + zip export. Same shape as v0.4.8's
+    `export.rs`; tests pull `awl-db` in via a dev-only dep.
+  - `awl-ipc/` — every `#[tauri::command]` (47 total) plus
+    `run_scan_once_mode` / `run_brief_once_mode` /
+    `auto_rescan_all` / `background_scan_loop` /
+    `reset_events` / launchd install + uninstall. Exposes a
+    `pub fn register<R>(builder)` wrapper around
+    `tauri::generate_handler![...]` so the 47 commands can
+    stay private to the crate without colliding on the
+    macro-generated `__cmd__*` symbols. **Dependencies**:
+    `awl-core` + `awl-db` + `awl-export`.
+  - `awl-desktop/` — `pub fn run` (Tauri 2 `Builder::default`
+    glue + `setup` + system tray + window event handlers),
+    `main.rs` (binary entry, parses `--scan-once` /
+    `--brief-once` before `run`), and `window_state.rs` (lifted
+    from the old `awl-db` because it needs `tauri::WebviewWindow`).
+    **Dependencies**: `awl-core` + `awl-db` + `awl-ipc` +
+    `awl-export`.
+- **Cycle-breaking decisions** (full discussion in
+  `docs/V0.5.0-CHANGELOG.md`):
+  - `app_settings.rs` lives in `awl-core`, not `awl-db`
+    — both connectors and the migration need it, so putting
+    it in `awl-core` keeps the dep graph a DAG.
+  - `window_state.rs` lives in `awl-desktop`, not `awl-db`
+    — it needs `tauri::WebviewWindow`.
+  - `awl_core::app_settings::DEFAULT_EVENT_RETENTION_DAYS = 90`
+    and `awl_db::retention::DEFAULT_RETENTION_DAYS = 90` are
+    duplicated by intent and held in lock-step by
+    cross-pointing code comments.
 - **React + TS** UI in `app/src/` + `app/src/pages/` (Home, Timeline,
   Sessions, Planner, Settings)
 - **SQLite (rusqlite)** in WAL mode at
   `~/Library/Application Support/com.minimaxcode.agentworkledger/ledger.db`
 
-Schema is versioned; `SCHEMA_VERSION = 7` (v0.4.8).
+Schema is versioned; `SCHEMA_VERSION = 4`. The 5-crate split
+shipped in v0.5.0 is a pure refactor — same schema version,
+same IPC surface, same permissions.
 
 ## Privacy
 
@@ -193,34 +227,52 @@ Agent Work Ledger/
 ├── LICENSE-MIT                         — MIT text
 ├── LICENSE-APACHE                      — Apache 2.0 text
 ├── README.md                           — this file
+├── CHANGELOG.md                        — canonical release log
+├── CONTRIBUTING.md / CODE_OF_CONDUCT.md / SECURITY.md
 ├── app/
-│   ├── launchd/                        — launchd plist template
 │   ├── src/                            — React + TS UI
 │   │   ├── App.tsx                     — home + Settings cards
 │   │   ├── pages/                      — Home / Timeline / Sessions / Planner / Settings
 │   │   └── components/                 — reusable UI primitives
-│   └── src-tauri/                      — Rust core
-│       └── src/
-│           ├── ai.rs                   — Ollama HTTP client + settings
-│           ├── connectors/             — per-agent ingest modules (10+)
-│           ├── error.rs / redactor.rs / idb.rs / lib.rs / planner.rs
-│           ├── brief.rs / eisenhower.rs / export.rs / search.rs
-│           ├── retention.rs / window_state.rs / app_settings.rs
-│           └── tests/                  — integration tests
+│   └── src-tauri/                      — Rust core (Cargo workspace, v0.5.0+)
+│       ├── Cargo.toml                  — workspace root, members = 5 crates
+│       └── crates/
+│           ├── awl-core/               — pure domain (12 modules + 10 connectors)
+│           ├── awl-db/                 — schema v4 + migrate + retention
+│           ├── awl-export/             — bulk + zip export
+│           ├── awl-ipc/                — 47 #[tauri::command] + launchd glue
+│           ├── awl-desktop/            — binary entry + Builder + tray + window state
+│           │   ├── tauri.conf.json      — bundle / icons / launchd resources
+│           │   ├── capabilities/       — plugin permission set
+│           │   └── icons/               — full macOS icon set
+│           └── launchd/                — LaunchAgent plist templates (bundled as tauri resources)
 ├── connectors/                         — legacy C PoC tools (kept for re-verification)
 ├── docs/
 │   ├── 00-product-plan.md
 │   ├── 01-connectors-feasibility.md    (appendix C = Chromium IDB key schema)
-│   └── RELEASE-NOTES.md
+│   ├── RELEASE-NOTES.md                — local-era release notes (pre-git)
+│   ├── ISSUES_DRAFTS.md                — pre-written GitHub issue drafts
+│   ├── OSS-LAUNCH.md                   — public-launch runbook
+│   └── V0.5.0-CHANGELOG.md / V0.5.0-ROADMAP.md — Track A + Track B design
+├── .github/
+│   ├── ISSUE_TEMPLATE/                 — bug_report.md + feature_request.md
+│   └── PULL_REQUEST_TEMPLATE.md
 └── scripts/
 ```
 
 ## Roadmap (next)
 
-- **Stage 6-P1 / SQLCipher unlock** — decrypt TRAE SOLO's
-  `ai-agent/database.db` with the user's keychain entry. This is the
-  last big gap on the connector side.
-- **Cargo workspace split** — `connectors-core` / `db` /
-  `ipc-commands` / `export` crates. The single-crate `lib.rs` is now
-  >2 500 lines.
-- **OSS launch** — first public GitHub release once Stage 6-P1 ships.
+- **Track B / Stage 6 SQLCipher** (in flight, ships as v0.5.1) —
+  decrypt TRAE SOLO's `ai-agent/database.db` with the user's keychain
+  entry under service `TRAE SOLO Safe Storage`. One user prompt
+  (`security find-generic-password -s 'TRAE SOLO Safe Storage' -wa`)
+  before the first ingest; subsequent runs are headless.
+- **OSS visibility** (shipped v0.4.10.1) — live at
+  <https://github.com/huoyuntianzhi1/agent-work-ledger>. Stars,
+  watchers, and one external PR will gate the next milestone.
+- **Upstream collaboration** (in flight) — issue
+  [#1 on `chrzamz/sessio`](https://github.com/chrzamz/sessio/issues/1)
+  (the parallel Rust agent-ledger project) has been opened
+  proposing connector-layer interop, FTS5 schema knowledge-share,
+  and a co-spec for Phase 4 (project aliases / incremental
+  indexing / starring). No merge expectation.

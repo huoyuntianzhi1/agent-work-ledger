@@ -1,0 +1,36 @@
+[package]
+name = "awl-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Agent Work Ledger — domain logic (connectors, redactor, IDB, AI, brief, eisenhower, planner, search, etl, summary, reports)"
+
+[lib]
+name = "awl_core"
+crate-type = ["rlib"]
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+regex = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+sha2 = "0.10"
+zstd = "0.13"
+dirs = "5"
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+# `AppError::Zip` powers `?` propagation inside awl-export's zip writer.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# `AppError::Tauri` powers `?` propagation inside awl-desktop's
+# window_state helpers (`WebviewWindow::outer_position/outer_size`).
+tauri = { version = "2", features = [] }
+
+[dev-dependencies]
+# `migrate_for_tests` only lives in awl-db; connector test mods build an
+# in-memory ledger via that helper.
+awl-db = { path = "../awl-db" }

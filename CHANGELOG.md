@@ -8,6 +8,78 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.0 — 2026-10-18
+
+- **Workspace split (Track A of the v0.5.0 roadmap)**. The
+  monolithic `src/lib.rs` (2423 lines, 30+ `#[tauri::command]`
+  handlers) is broken into 5 crates:
+  - `awl-core` — pure domain logic. 12 modules (ai, app_settings,
+    brief, connectors × 10, eisenhower, error, etl, idb, planner,
+    redactor, reports, search, summary), `build.rs` for
+    linker-level `leveldb` symbol lookup, and no `tauri`
+    consumer-facing API. Owns `AppError::Zip` + `AppError::Tauri`
+    conversions so downstream crates stay composable.
+  - `awl-db` — schema v4 + `migrate` + `backup_ledger_pre_v4` +
+    `is_v3_schema` + `migrate_for_tests` + 6 schema tests + the
+    `retention` sub-module. Backed by `awl-core` for the
+    connector-side `redactor` / `etl` types used during ingest.
+  - `awl-export` — bulk + zip export. Owns its own
+    `migrate_for_tests` use via a dev-only `awl-db` dep, so tests
+    can exercise real DB plumbing without dragging the export
+    crate into the workspace runtime graph.
+  - `awl-ipc` — every `#[tauri::command]` plus `run_scan_once_mode`
+    / `run_brief_once_mode` / `auto_rescan_all` /
+    `background_scan_loop` / `reset_events` / launchd
+    install + uninstall. Exposes `pub fn register<R>(builder)`
+    that wraps `tauri::generate_handler![…]` so the 47 IPC
+    functions stay private (the macro would otherwise error on
+    duplicate `__cmd__*` symbols across crates).
+  - `awl-desktop` — `pub fn run` (Tauri 2 `Builder::default`
+    glue + setup + tray icon + window event) + `main.rs` binary
+    entry + `window_state.rs`. Owns the only `tauri` runtime
+    dependency in the workspace.
+- **Cycle-breaking decisions**:
+  1. `app_settings` lives in `awl-core`, not `awl-db`. The
+     `awl_settings.json` read/write path needed by both the
+     connectors (which sit in `awl-core`) and the schema
+     migration (which sits in `awl-db`) is the natural source
+     of the cycle. Moving `app_settings` up into `awl-core`
+     lets `awl-db` depend on `awl-core` without reversing it.
+  2. `window_state` lives in `awl-desktop`, not `awl-db`.
+     It needs `tauri::WebviewWindow` + `LogicalPosition` and
+     `LogicalSize`, which are runtime-only concepts `awl-db`
+     cannot reasonably depend on.
+  3. Two retention constants are kept in lock-step by
+     documentation rather than sharing a type:
+     `awl_core::app_settings::DEFAULT_EVENT_RETENTION_DAYS = 90`
+     and `awl_db::retention::DEFAULT_RETENTION_DAYS = 90`.
+     `ai.rs` inlines a 4-line `resolve_data_dir` that mirrors
+     `awl_db::resolve_data_dir` for the same reason.
+- **Connectors stay put**. All 10 connector modules
+  (claude / codex / cursor / doubao / markdown_summary /
+  minimax / opencode / trae / workbuddy) move with `awl-core`,
+  and their test mods use `awl_db::migrate_for_tests` via a
+  dev-only `awl-db` dep.
+- **No binary behavior change for the user**: same `run`,
+  same `setup`, same tray, same window state, same IPC
+  surface, same `capabilities/default.json` permission set,
+  same launchd plist payloads (now bundled as tauri
+  resources from `crates/launchd/`). Same DB schema (v4);
+  same command count (47). Same hash pipeline. Same
+  redactor (3 API-key patterns, all cloud providers forced
+  through `Redactor::cloud`).
+- **`cargo check --workspace`**: 0 errors.
+  Carried warnings: a small set of `unused` / `dead_code` /
+  `private_interfaces` / `parens` items (see git diff for
+  the exact list). None affect runtime or build output.
+- **`cargo test --workspace`**: 138 tests pass
+  (awl-core 109 + 1 ignored + 5 doc-tests, awl-db 6,
+  awl-desktop 8, awl-export 13, binary stubs 0 each).
+- Track B (Stage 6 SQLCipher) for `TRAE SOLO` / `ModularData`
+  follows the same work-product tag cadence once the user
+  grants one keychain access via
+  `security find-generic-password -s 'TRAE SOLO Safe Storage' -wa`.
+
 ## v0.4.10 — 2026-10-18
 
 - **OSS launch prep**: CONTRIBUTING.md, CODE_OF_CONDUCT.md

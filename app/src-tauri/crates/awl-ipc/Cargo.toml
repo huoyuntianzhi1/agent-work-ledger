@@ -1,0 +1,30 @@
+[package]
+name = "awl-ipc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Agent Work Ledger — Tauri 2 IPC commands (thin handlers over awl-core / awl-db / awl-export)"
+
+[lib]
+name = "awl_ipc"
+crate-type = ["rlib"]
+
+[dependencies]
+awl-core = { path = "../awl-core" }
+awl-db = { path = "../awl-db" }
+awl-export = { path = "../awl-export" }
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+# `dirs::home_dir()` for the LaunchAgents path; `dirs::data_dir()`
+# powers `awl_db::resolve_data_dir` (re-exported here).
+dirs = "5"
+# `base64` decodes the IPC payload for `write_binary_file` — Tauri 2
+# IPC is JSON-only, so binary bytes cross as base64 strings.
+base64 = "0.22"

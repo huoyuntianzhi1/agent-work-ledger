@@ -10,30 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-work-ledger"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "chrono",
- "dirs 5.0.1",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-shell",
- "thiserror 1.0.69",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "walkdir",
- "zip",
- "zstd",
-]
+version = "0.5.0"
 
 [[package]]
 name = "ahash"
@@ -129,6 +106,100 @@ name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
+
+[[package]]
+name = "awl-core"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "awl-db",
+ "chrono",
+ "dirs 5.0.1",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "thiserror 1.0.69",
+ "tracing",
+ "uuid",
+ "walkdir",
+ "zip",
+ "zstd",
+]
+
+[[package]]
+name = "awl-db"
+version = "0.5.0"
+dependencies = [
+ "awl-core",
+ "chrono",
+ "dirs 5.0.1",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "awl-desktop"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "awl-core",
+ "awl-db",
+ "awl-export",
+ "awl-ipc",
+ "chrono",
+ "dirs 5.0.1",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-shell",
+ "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "awl-export"
+version = "0.5.0"
+dependencies = [
+ "awl-core",
+ "awl-db",
+ "base64 0.22.1",
+ "chrono",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "zip",
+]
+
+[[package]]
+name = "awl-ipc"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "awl-core",
+ "awl-db",
+ "awl-export",
+ "base64 0.22.1",
+ "chrono",
+ "dirs 5.0.1",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 1.0.69",
+ "tracing",
+]
 
 [[package]]
 name = "base64"

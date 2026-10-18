@@ -1,0 +1,21 @@
+[package]
+name = "awl-db"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Agent Work Ledger — schema migration, retention, window state, app settings"
+
+[lib]
+name = "awl_db"
+crate-type = ["rlib"]
+
+[dependencies]
+awl-core = { path = "../awl-core" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+thiserror = "1"
+tracing = "0.1"

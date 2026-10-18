@@ -1,0 +1,24 @@
+[package]
+name = "awl-export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Agent Work Ledger — bulk export (JSON / CSV / zip-of-Markdown)"
+
+[lib]
+name = "awl_export"
+crate-type = ["rlib"]
+
+[dependencies]
+awl-core = { path = "../awl-core" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+base64 = "0.22"
+thiserror = "1"
+
+[dev-dependencies]
+awl-db = { path = "../awl-db" }
