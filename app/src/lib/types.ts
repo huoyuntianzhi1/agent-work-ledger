@@ -172,6 +172,12 @@ export type BulkZipExport = {
 // one of `"session"` / `"event"` / `"plan"` / `"source"` and
 // determines the right "open" destination in the frontend (the
 // click-through handler dispatches on `kind`).
+//
+// v0.5.4 polish: `snippet` may include `<mark>...</mark>` markers
+// around the matching positions. The renderer treats the snippet
+// as HTML; everything outside the markers is HTML-escaped by
+// the backend so the snippet is safe to render via
+// `dangerouslySetInnerHTML`.
 export type SearchHit = {
   kind: "session" | "event" | "plan" | "source";
   id: string;
@@ -181,6 +187,26 @@ export type SearchHit = {
   snippet: string;
   project_key: string | null;
   started_at: string | null;
+};
+
+// v0.5.4: per-source match counts BEFORE the per-source LIMIT cap
+// is applied. Lets the UI render "会话 · 12 / 事件 · 47 / …" so
+// the user can see at a glance which source owns the result.
+export type SearchCounts = {
+  sessions: number;
+  events: number;
+  plans: number;
+  sources: number;
+  total: number;
+};
+
+// v0.5.4: `global_search` now returns the hit array + counts +
+// elapsed_ms. The frontend reads `counts` to render the per-source
+// header and `elapsed_ms` to render the "took N ms" footer.
+export type SearchResult = {
+  hits: SearchHit[];
+  counts: SearchCounts;
+  elapsed_ms: number;
 };
 
 // Returned by `rebuild_sessions_summary` — a manual bulk re-ETL pass.

@@ -1674,7 +1674,7 @@ fn render_sessions_bulk_zip(
 fn global_search(
     state: State<'_, AppState>,
     query: String,
-) -> AppResult<Vec<awl_core::search::SearchHit>> {
+) -> AppResult<awl_core::search::SearchResult> {
     let conn = state.db.lock().expect("db mutex poisoned");
     awl_core::search::global_search(&conn, &query)
 }

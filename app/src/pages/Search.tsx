@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { cn, sourceColorClass } from "../lib/utils";
-import type { SearchHit } from "../lib/types";
+import type { SearchHit, SearchResult } from "../lib/types";
 
 // Stage 5.7 / v0.3.7: cross-source search. One search box, results
 // grouped by `kind` and coloured by source. Clicking a hit jumps
@@ -53,6 +53,18 @@ export default function SearchPage() {
   const initialQ = searchParams.get("q") ?? "";
   const [query, setQuery] = useState(initialQ);
   const [hits, setHits] = useState<SearchHit[]>([]);
+  // v0.5.4: per-source match counts and elapsed_ms arrive on
+  // every response. `lastCounts` lets us render "took N ms" on
+  // the footer only when we have data, and the per-source header
+  // reads from `lastCounts` so a follow-up empty query clears it.
+  const [lastCounts, setLastCounts] = useState<{
+    sessions: number;
+    events: number;
+    plans: number;
+    sources: number;
+    total: number;
+  } | null>(null);
+  const [lastElapsedMs, setLastElapsedMs] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,14 +90,18 @@ export default function SearchPage() {
   const runSearch = useCallback(async (q: string) => {
     if (q.trim().length < 2) {
       setHits([]);
+      setLastCounts(null);
+      setLastElapsedMs(null);
       setError(null);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const out = await invoke<SearchHit[]>("global_search", { query: q });
-      setHits(out);
+      const out = await invoke<SearchResult>("global_search", { query: q });
+      setHits(out.hits);
+      setLastCounts(out.counts);
+      setLastElapsedMs(out.elapsed_ms);
     } catch (e) {
       setError(`搜索失败: ${String(e)}`);
     } finally {
@@ -149,8 +165,12 @@ export default function SearchPage() {
         </div>
         <p className="mx-auto mt-2 max-w-3xl text-[11px] text-neutral-500">
           {query.trim().length < 2
-            ? "输入至少 2 个字符开始搜索 · ⌘K / Ctrl-K 聚焦"
-            : `${hits.length} 个命中 · 按类型分组`}
+            ? "输入至少 2 个字符开始搜索 · 多词用空格分隔 (AND 匹配) · ⌘K / Ctrl-K 聚焦"
+            : `${hits.length} 个命中 · ` +
+              (lastCounts
+                ? `会话 ${lastCounts.sessions} · 事件 ${lastCounts.events} · 规划 ${lastCounts.plans} · 数据源 ${lastCounts.sources}` +
+                  (lastElapsedMs !== null ? ` · 用了 ${lastElapsedMs} ms` : "")
+                : "按类型分组")}
         </p>
       </header>
 
@@ -199,9 +219,16 @@ export default function SearchPage() {
                         {hit.title || hit.snippet || hit.id}
                       </p>
                       {hit.snippet && hit.title && (
-                        <p className="mt-0.5 line-clamp-2 text-xs text-neutral-600">
-                          {hit.snippet}
-                        </p>
+                        // v0.5.4: snippet is HTML-escaped in `search.rs`
+                        // aside from the `<mark>` markers we inserted
+                        // ourselves, so it's safe to render with
+                        // `dangerouslySetInnerHTML`. The marker
+                        // descendant selector styles the highlight
+                        // without us having to parse anything.
+                        <p
+                          className="mt-0.5 line-clamp-2 text-xs text-neutral-600 [&_mark]:rounded [&_mark]:bg-amber-100 [&_mark]:px-0.5 [&_mark]:text-amber-900"
+                          dangerouslySetInnerHTML={{ __html: hit.snippet }}
+                        />
                       )}
                       <p className="mt-0.5 flex items-center gap-2 text-[10px] text-neutral-400">
                         <span>{KIND_LABEL[hit.kind]}</span>

@@ -8,6 +8,43 @@ Versions follow `vX.Y.Z` where `X` is a breaking schema change,
 
 - (placeholder — see git history for the actual entries)
 
+## v0.5.4 — 2026-10-18
+
+- **Cross-source search polish.** The Cmd-K search overlay
+  (`awl-core::search::global_search`, IPC `global_search`,
+  frontend `pages/Search.tsx`) gets three meaningful upgrades:
+- **Multi-token AND.** A query is now split on whitespace and
+  every token must hit at least one searchable column on the
+  row. `doubao events` finds rows mentioning both, not rows
+  mentioning either alone. UTF-8 tokenization is per-char so
+  Chinese queries work token-by-token without an extra
+  CJK-segmentation dependency.
+- **`<mark>` snippet highlighting.** Each match is wrapped in
+  `<mark>...</mark>` inside the snippet. The snippet itself is
+  HTML-escaped by the backend so `&`/`<`/`>`/quotes from user
+  payloads are safe to render; only the marker tags are
+  active markup. The frontend renders snippets via
+  `dangerouslySetInnerHTML` and styles `<mark>` with Tailwind
+  arbitrary descendants (`[&_mark]:bg-amber-100 …`).
+- **`SearchResult` envelope.** `global_search` now returns
+  `{ hits, counts, elapsed_ms }`. `counts` carries the per-
+  source total BEFORE the per-source LIMIT cap so the UI can
+  render "会话 12 · 事件 47 · 规划 3 · 数据源 0"; `elapsed_ms`
+  is the wall time spent on the SQL for the footer "用了 47
+  ms".
+- 8 unit tests in `search::tests` cover LIKE escaping (incl.
+  HTML meta-chars), build_or_clause AND-within-OR shape,
+  html_escape, the highlight round-trip (markers wrap
+  original-case text, idempotent after `strip_html_marks`),
+  char-boundary aware Chinese truncation, and the per-token
+  hit counter.
+- Frontend changes touch `types.ts` (new `SearchCounts` +
+  `SearchResult` types) and `pages/Search.tsx` (response
+  shape, header counts line, highlight render). No DB schema
+  change, no IPC contract break for callers other than the
+  search page itself.
+- 156 total pass (was 148).
+
 ## v0.5.3 — 2026-10-18
 
 - **Hotfix — macOS LaunchAgent plist after workspace split.**
